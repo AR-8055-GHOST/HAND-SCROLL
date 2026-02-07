@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gesture Control - Scroll & Select</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Righteous&family=Syne:wght@400;600;700;800&display=swap');
+        
+        :root {
+            --neon-cyan: #00f0ff;
+            --neon-pink: #ff00e5;
+            --neon-yellow: #ffff00;
+            --neon-green: #39ff14;
+            --dark-bg: #0d0221;
+            --darker-bg: #050111;
+            --glass-bg: rgba(255, 255, 255, 0.05);
+            --glass-border: rgba(255, 255, 255, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Syne', sans-serif;
+            background: var(--dark-bg);
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        /* Animated gradient background */
+        .bg-gradient {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: 
+                radial-gradient(circle at 10% 20%, rgba(0, 240, 255, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 90% 80%, rgba(255, 0, 229, 0.15) 0%, transparent 50%),
+                radial-gradient(circle at 50% 50%, rgba(57, 255, 20, 0.1) 0%, transparent 50%);
+            animation: gradientShift 15s ease infinite;
+        }
+
+        @keyframes gradientShift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(50px, -50px) scale(1.1); }
+            66% { transform: translate(-50px, 50px) scale(0.9); }
+        }
+
+        /* Grid pattern overlay */
+        .grid-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background-image: 
+                linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            opacity: 0.5;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 50px;
+            animation: fadeInDown 1s ease-out;
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        h1 {
+            font-family: 'Righteous', cursive;
+            font-size: 5em;
+            font-weight: 700;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink), var(--neon-yellow));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 15px;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            filter: drop-shadow(0 0 30px rgba(0, 240, 255, 0.5));
+            animation: textGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes textGlow {
+            0%, 100% { 
+                filter: drop-shadow(0 0 30px rgba(0, 240, 255, 0.5));
+            }
+            50% { 
+                filter: drop-shadow(0 0 50px rgba(255, 0, 229, 0.8));
+            }
+        }
+
+        .tagline {
+            font-size: 1.4em;
+            color: var(--neon-cyan);
+            font-weight: 600;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 400px 1fr;
+            gap: 30px;
+            min-height: calc(100vh - 250px);
+        }
+
+        /* Video Section */
+        .video-section {
+            position: sticky;
+            top: 20px;
+            height: fit-content;
+        }
+
+        .video-container {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            border: 2px solid var(--glass-border);
+            box-shadow: 
+                0 20px 80px rgba(0, 0, 0, 0.5),
+                inset 0 0 30px rgba(0, 240, 255, 0.1);
+            overflow: hidden;
+            position: relative;
+            animation: fadeIn 1s ease-out 0.2s both;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 133.33%; /* 3:4 aspect ratio */
+            background: var(--darker-bg);
+        }
+
+        #videoElement {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+
+        #handCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .hand-status {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(10px);
+            padding: 15px 20px;
+            border-radius: 15px;
+            border: 1px solid var(--neon-cyan);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+        }
+
+        .gesture-display {
+            font-size: 36px;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .gesture-name {
+            text-align: center;
+            font-family: 'Righteous', cursive;
+            color: var(--neon-cyan);
+            font-size: 14px;
+            letter-spacing: 2px;
+        }
+
+        .controls {
+            margin-top: 20px;
+            padding: 20px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            border: 2px solid var(--glass-border);
+        }
+
+        .control-btn {
+            width: 100%;
+            padding: 18px;
+            margin-bottom: 12px;
+            font-family: 'Righteous', cursive;
+            font-size: 14px;
+            letter-spacing: 2px;
+            border: 2px solid var(--neon-cyan);
+            border-radius: 15px;
+            background: transparent;
+            color: var(--neon-cyan);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+            text-transform: uppercase;
+        }
+
+        .control-btn::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            background: var(--neon-cyan);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            transition: width 0.4s, height 0.4s;
+        }
+
+        .control-btn:hover::before {
+            width: 400px;
+            height: 400px;
+        }
+
+        .control-btn:hover {
+            color: var(--dark-bg);
+            box-shadow: 0 0 30px rgba(0, 240, 255, 0.8);
+        }
+
+        .control-btn span {
+            position: relative;
+            z-index: 1;
+        }
+
+        .btn-start {
+            border-color: var(--neon-green);
+            color: var(--neon-green);
+        }
+
+        .btn-start::before {
+            background: var(--neon-green);
+        }
+
+        .btn-stop {
+            border-color: var(--neon-pink);
+            color: var(--neon-pink);
+        }
+
+        .btn-stop::before {
+            background: var(--neon-pink);
+        }
+
+        /* Scrollable Content Section */
+        .content-section {
+            background: var(--glass-bg);
+            backdrop-filter: blur(20px);
+            border-radius: 30px;
+            border: 2px solid var(--glass-border);
+            padding: 40px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
+            animation: fadeIn 1s ease-out 0.4s both;
+            scroll-behavior: smooth;
+        }
+
+        .content-section::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        .content-section::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 10px;
+        }
+
+        .content-section::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, var(--neon-cyan), var(--neon-pink));
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+        }
+
+        .scroll-indicator {
+            position: fixed;
+            right: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: 'Righteous', cursive;
+            font-size: 14px;
+            color: var(--neon-cyan);
+            writing-mode: vertical-rl;
+            letter-spacing: 3px;
+            opacity: 0.7;
+            animation: bounce 2s ease-in-out infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(-50%); }
+            50% { transform: translateY(-45%); }
+        }
+
+        .section-title {
+            font-family: 'Righteous', cursive;
+            font-size: 2.5em;
+            margin-bottom: 30px;
+            background: linear-gradient(90deg, var(--neon-cyan), var(--neon-pink));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .card {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            border: 2px solid var(--glass-border);
+            border-radius: 20px;
+            padding: 30px;
+            margin-bottom: 30px;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: linear-gradient(
+                45deg,
+                transparent,
+                rgba(0, 240, 255, 0.1),
+                transparent
+            );
+            transform: rotate(45deg);
+            transition: all 0.5s ease;
+        }
+
+        .card:hover::before {
+            top: -25%;
+            left: -25%;
+        }
+
+        .card:hover {
+            transform: translateY(-10px) scale(1.02);
+            border-color: var(--neon-cyan);
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                0 0 40px rgba(0, 240, 255, 0.3);
+        }
+
+        .card.selected {
+            border-color: var(--neon-pink);
+            background: rgba(255, 0, 229, 0.1);
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.5),
+                0 0 40px rgba(255, 0, 229, 0.6);
+            transform: scale(1.05);
+        }
+
+        .card-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .card-title {
+            font-family: 'Righteous', cursive;
+            font-size: 1.8em;
+            margin-bottom: 15px;
+            color: var(--neon-cyan);
+        }
+
+        .card.selected .card-title {
+            color: var(--neon-pink);
+        }
+
+        .card-description {
+            color: rgba(255, 255, 255, 0.8);
+            line-height: 1.6;
+            font-size: 1.05em;
+        }
+
+        .gesture-guide {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            backdrop-filter: blur(20px);
+            padding: 20px 40px;
+            border-radius: 20px;
+            border: 2px solid var(--neon-cyan);
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            display: flex;
+            gap: 40px;
+            animation: fadeIn 1s ease-out 0.6s both;
+        }
+
+        .gesture-item {
+            text-align: center;
+        }
+
+        .gesture-emoji {
+            font-size: 32px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .gesture-label {
+            font-family: 'Righteous', cursive;
+            font-size: 12px;
+            color: var(--neon-cyan);
+            letter-spacing: 1px;
+        }
+
+        @media (max-width: 1200px) {
+            .main-layout {
+                grid-template-columns: 1fr;
+            }
+
+            .video-section {
+                position: relative;
+                top: 0;
+                max-width: 500px;
+                margin: 0 auto;
+            }
+
+            h1 {
+                font-size: 3em;
+            }
+
+            .gesture-guide {
+                flex-wrap: wrap;
+                gap: 20px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2em;
+            }
+
+            .tagline {
+                font-size: 1em;
+            }
+
+            .content-section {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <div class="grid-overlay"></div>
+
+    <div class="container">
+        <header>
+            <h1>Gesture Control</h1>
+            <p class="tagline">Scroll & Select with Your Hands</p>
+        </header>
+
+        <div class="main-layout">
+            <!-- Video Section -->
+            <div class="video-section">
+                <div class="video-container">
+                    <div class="video-wrapper">
+                        <video id="videoElement" autoplay playsinline></video>
+                        <canvas id="handCanvas"></canvas>
+                    </div>
+                    <div class="hand-status">
+                        <div class="gesture-display" id="gestureEmoji">👋</div>
+                        <div class="gesture-name" id="gestureName">READY</div>
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button class="control-btn btn-start" id="startBtn">
+                        <span>🚀 START CAMERA</span>
+                    </button>
+                    <button class="control-btn btn-stop" id="stopBtn">
+                        <span>⏹️ STOP CAMERA</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Content Section -->
+            <div class="content-section" id="contentSection">
+                <h2 class="section-title">Interactive Content Gallery</h2>
+
+                <div class="card" data-index="0">
+                    <span class="card-icon">🎨</span>
+                    <h3 class="card-title">Creative Design</h3>
+                    <p class="card-description">
+                        Explore stunning visual designs and creative artworks. Use hand gestures to scroll through our curated collection of innovative design concepts and artistic expressions.
+                    </p>
+                </div>
+
+                <div class="card" data-index="1">
+                    <span class="card-icon">🚀</span>
+                    <h3 class="card-title">Innovation Hub</h3>
+                    <p class="card-description">
+                        Discover cutting-edge technologies and innovative solutions. Navigate through breakthrough ideas and revolutionary concepts using intuitive hand movements.
+                    </p>
+                </div>
+
+                <div class="card" data-index="2">
+                    <span class="card-icon">💡</span>
+                    <h3 class="card-title">Bright Ideas</h3>
+                    <p class="card-description">
+                        Illuminate your mind with inspiring concepts and creative thinking. Gesture-controlled scrolling makes exploring new ideas more engaging and interactive.
+                    </p>
+                </div>
+
+                <div class="card" data-index="3">
+                    <span class="card-icon">🎯</span>
+                    <h3 class="card-title">Target Goals</h3>
+                    <p class="card-description">
+                        Set and achieve your objectives with precision. Use pinch gestures to select specific goals and scroll through your achievement roadmap effortlessly.
+                    </p>
+                </div>
+
+                <div class="card" data-index="4">
+                    <span class="card-icon">🌟</span>
+                    <h3 class="card-title">Excellence</h3>
+                    <p class="card-description">
+                        Strive for excellence in everything you do. Navigate through best practices and quality standards with smooth, gesture-based interactions.
+                    </p>
+                </div>
+
+                <div class="card" data-index="5">
+                    <span class="card-icon">🔥</span>
+                    <h3 class="card-title">Hot Trends</h3>
+                    <p class="card-description">
+                        Stay updated with the latest trending topics and viral content. Scroll through what's hot using natural hand movements for an immersive experience.
+                    </p>
+                </div>
+
+                <div class="card" data-index="6">
+                    <span class="card-icon">⚡</span>
+                    <h3 class="card-title">Fast Performance</h3>
+                    <p class="card-description">
+                        Experience lightning-fast responsiveness and smooth interactions. Our gesture recognition system ensures real-time feedback and seamless control.
+                    </p>
+                </div>
+
+                <div class="card" data-index="7">
+                    <span class="card-icon">🎮</span>
+                    <h3 class="card-title">Interactive Gaming</h3>
+                    <p class="card-description">
+                        Engage with interactive content and gamified experiences. Control your journey through gesture-based navigation and selection mechanisms.
+                    </p>
+                </div>
+
+                <div class="card" data-index="8">
+                    <span class="card-icon">🌈</span>
+                    <h3 class="card-title">Colorful World</h3>
+                    <p class="card-description">
+                        Dive into a vibrant spectrum of possibilities. Navigate through colorful content using intuitive hand gestures for a delightful browsing experience.
+                    </p>
+                </div>
+
+                <div class="card" data-index="9">
+                    <span class="card-icon">🎭</span>
+                    <h3 class="card-title">Entertainment</h3>
+                    <p class="card-description">
+                        Enjoy endless entertainment options at your fingertips. Scroll, select, and explore content with natural hand movements for maximum engagement.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <div class="scroll-indicator">SCROLL WITH GESTURES</div>
+
+        <div class="gesture-guide">
+            <div class="gesture-item">
+                <span class="gesture-emoji">👆</span>
+                <div class="gesture-label">SCROLL UP</div>
+            </div>
+            <div class="gesture-item">
+                <span class="gesture-emoji">👇</span>
+                <div class="gesture-label">SCROLL DOWN</div>
+            </div>
+            <div class="gesture-item">
+                <span class="gesture-emoji">🤏</span>
+                <div class="gesture-label">SELECT</div>
+            </div>
+            <div class="gesture-item">
+                <span class="gesture-emoji">✋</span>
+                <div class="gesture-label">STOP</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        let hands = null;
+        let isProcessing = false;
+        let previousY = null;
+        let scrollSpeed = 20;
+        let selectedCard = null;
+        let pinchCooldown = false;
+
+        // Elements
+        const video = document.getElementById('videoElement');
+        const handCanvas = document.getElementById('handCanvas');
+        const handCtx = handCanvas.getContext('2d');
+        const contentSection = document.getElementById('contentSection');
+        const gestureEmoji = document.getElementById('gestureEmoji');
+        const gestureName = document.getElementById('gestureName');
+        const cards = document.querySelectorAll('.card');
+
+        // Start Camera
+        document.getElementById('startBtn').addEventListener('click', async () => {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    }
+                });
+                
+                video.srcObject = stream;
+                
+                video.addEventListener('loadedmetadata', () => {
+                    handCanvas.width = video.videoWidth;
+                    handCanvas.height = video.videoHeight;
+                    
+                    initializeHands();
+                    updateGestureDisplay('👋', 'TRACKING...');
+                });
+            } catch (err) {
+                console.error('Camera error:', err);
+                alert('Could not access camera. Please check permissions.');
+            }
+        });
+
+        // Stop Camera
+        document.getElementById('stopBtn').addEventListener('click', () => {
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            isProcessing = false;
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+            updateGestureDisplay('👋', 'STOPPED');
+        });
+
+        function initializeHands() {
+            hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+
+            hands.setOptions({
+                maxNumHands: 1,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.7
+            });
+
+            hands.onResults(onResults);
+            
+            isProcessing = true;
+            processFrame();
+        }
+
+        async function processFrame() {
+            if (!isProcessing) return;
+            
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                try {
+                    await hands.send({ image: video });
+                } catch (err) {
+                    console.error('Processing error:', err);
+                }
+            }
+            requestAnimationFrame(processFrame);
+        }
+
+        function onResults(results) {
+            // Clear hand canvas
+            handCtx.clearRect(0, 0, handCanvas.width, handCanvas.height);
+
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                const landmarks = results.multiHandLandmarks[0];
+                
+                // Draw hand skeleton
+                drawHandSkeleton(landmarks);
+                
+                // Detect gestures
+                const gesture = detectGesture(landmarks);
+                
+                if (gesture === 'scroll_up') {
+                    contentSection.scrollTop -= scrollSpeed;
+                    updateGestureDisplay('👆', 'SCROLL UP');
+                } else if (gesture === 'scroll_down') {
+                    contentSection.scrollTop += scrollSpeed;
+                    updateGestureDisplay('👇', 'SCROLL DOWN');
+                } else if (gesture === 'pinch' && !pinchCooldown) {
+                    selectCardNearCursor(landmarks);
+                    updateGestureDisplay('🤏', 'SELECT');
+                    pinchCooldown = true;
+                    setTimeout(() => {
+                        pinchCooldown = false;
+                    }, 1000);
+                } else if (gesture === 'palm') {
+                    updateGestureDisplay('✋', 'STOP');
+                } else {
+                    updateGestureDisplay('👋', 'TRACKING');
+                }
+            } else {
+                updateGestureDisplay('❌', 'NO HAND');
+            }
+        }
+
+        function detectGesture(landmarks) {
+            const indexTip = landmarks[8];
+            const indexMcp = landmarks[5];
+            const thumbTip = landmarks[4];
+            const middleTip = landmarks[12];
+            const ringTip = landmarks[16];
+            const pinkyTip = landmarks[20];
+            const wrist = landmarks[0];
+
+            // Calculate distances
+            const indexUp = indexTip.y < indexMcp.y;
+            const middleDown = middleTip.y > landmarks[10].y;
+            const ringDown = ringTip.y > landmarks[14].y;
+            const pinkyDown = pinkyTip.y > landmarks[18].y;
+
+            // Pinch detection (thumb and index close)
+            const thumbIndexDist = Math.sqrt(
+                Math.pow(thumbTip.x - indexTip.x, 2) + 
+                Math.pow(thumbTip.y - indexTip.y, 2)
+            );
+
+            // All fingers up
+            const allFingersUp = 
+                indexTip.y < indexMcp.y &&
+                middleTip.y < landmarks[10].y &&
+                ringTip.y < landmarks[14].y &&
+                pinkyTip.y < landmarks[18].y;
+
+            if (thumbIndexDist < 0.05) {
+                return 'pinch';
+            } else if (allFingersUp) {
+                return 'palm';
+            } else if (indexUp && middleDown && ringDown && pinkyDown) {
+                // Index pointing - check if moving up or down
+                if (previousY !== null) {
+                    const deltaY = indexTip.y - previousY;
+                    previousY = indexTip.y;
+                    
+                    if (deltaY < -0.01) {
+                        return 'scroll_up';
+                    } else if (deltaY > 0.01) {
+                        return 'scroll_down';
+                    }
+                } else {
+                    previousY = indexTip.y;
+                }
+            } else {
+                previousY = null;
+            }
+
+            return 'none';
+        }
+
+        function selectCardNearCursor(landmarks) {
+            const indexTip = landmarks[8];
+            
+            // Convert normalized coordinates to screen space
+            const x = (1 - indexTip.x) * handCanvas.width;
+            const y = indexTip.y * handCanvas.height;
+            
+            // Get middle card as selection target
+            const visibleCards = Array.from(cards).filter(card => {
+                const rect = card.getBoundingClientRect();
+                const contentRect = contentSection.getBoundingClientRect();
+                return rect.top >= contentRect.top && rect.bottom <= contentRect.bottom;
+            });
+
+            if (visibleCards.length > 0) {
+                // Select middle visible card
+                const middleCard = visibleCards[Math.floor(visibleCards.length / 2)];
+                
+                // Clear previous selection
+                cards.forEach(card => card.classList.remove('selected'));
+                
+                // Add selection to current card
+                middleCard.classList.add('selected');
+                selectedCard = middleCard;
+
+                // Visual feedback
+                middleCard.style.transform = 'scale(1.1)';
+                setTimeout(() => {
+                    if (middleCard.classList.contains('selected')) {
+                        middleCard.style.transform = 'scale(1.05)';
+                    }
+                }, 200);
+            }
+        }
+
+        function drawHandSkeleton(landmarks) {
+            // Draw connections
+            const connections = [
+                [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+                [0, 5], [5, 6], [6, 7], [7, 8], // Index
+                [0, 9], [9, 10], [10, 11], [11, 12], // Middle
+                [0, 13], [13, 14], [14, 15], [15, 16], // Ring
+                [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
+                [5, 9], [9, 13], [13, 17] // Palm
+            ];
+
+            const gradient = handCtx.createLinearGradient(0, 0, handCanvas.width, handCanvas.height);
+            gradient.addColorStop(0, '#00f0ff');
+            gradient.addColorStop(1, '#ff00e5');
+
+            handCtx.strokeStyle = gradient;
+            handCtx.lineWidth = 3;
+
+            connections.forEach(([start, end]) => {
+                const startPoint = landmarks[start];
+                const endPoint = landmarks[end];
+                
+                handCtx.beginPath();
+                handCtx.moveTo(
+                    (1 - startPoint.x) * handCanvas.width, 
+                    startPoint.y * handCanvas.height
+                );
+                handCtx.lineTo(
+                    (1 - endPoint.x) * handCanvas.width, 
+                    endPoint.y * handCanvas.height
+                );
+                handCtx.stroke();
+            });
+
+            // Draw landmarks
+            landmarks.forEach((landmark, index) => {
+                const x = (1 - landmark.x) * handCanvas.width;
+                const y = landmark.y * handCanvas.height;
+                
+                handCtx.beginPath();
+                handCtx.arc(x, y, index === 8 || index === 4 ? 8 : 5, 0, 2 * Math.PI);
+                
+                if (index === 8 || index === 4) {
+                    const grad = handCtx.createRadialGradient(x, y, 0, x, y, 8);
+                    grad.addColorStop(0, '#ffff00');
+                    grad.addColorStop(1, '#ff00e5');
+                    handCtx.fillStyle = grad;
+                } else {
+                    handCtx.fillStyle = '#00f0ff';
+                }
+                
+                handCtx.fill();
+                
+                if (index === 8 || index === 4) {
+                    handCtx.strokeStyle = '#fff';
+                    handCtx.lineWidth = 2;
+                    handCtx.stroke();
+                }
+            });
+        }
+
+        function updateGestureDisplay(emoji, name) {
+            gestureEmoji.textContent = emoji;
+            gestureName.textContent = name;
+        }
+
+        // Click to deselect
+        cards.forEach(card => {
+            card.addEventListener('click', () => {
+                cards.forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedCard = card;
+            });
+        });
+    </script>
+</body>
+</html>
